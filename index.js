@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -10,19 +10,18 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// MongoDB setup
+// MongoDB connect
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ylnpvzy.mongodb.net/?appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1 },
 });
 
-// Async error handler
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
 // Root route
 app.get('/', (req, res) => {
-  res.send('🚀 Freelance Marketplace Server (Users Only) ✅');
+  res.send('🚀 Freelance Marketplace Server (Jobs CRUD) ✅');
 });
 
 async function run() {
@@ -30,35 +29,62 @@ async function run() {
   console.log('✅ MongoDB Connected');
 
   const db = client.db('freelance_marketplace');
-  const users = db.collection('users');
+  const jobs = db.collection('jobs');
 
-  /** ===========================
-   *  USERS FUNCTIONALITY
-   * =========================== */
-
-  // 👉 Create new user
+  //  Create a new job
   app.post(
-    '/users',
+    '/jobs',
     asyncHandler(async (req, res) => {
-      const newUser = req.body;
-      const existing = await users.findOne({ email: newUser.email });
-      if (existing)
-        return res.status(400).send({ message: 'User already exists' });
-
-      const result = await users.insertOne(newUser);
+      const newJob = { ...req.body, created_at: new Date(), status: 'open' };
+      const result = await jobs.insertOne(newJob);
       res.send(result);
     })
   );
 
-  // 👉 Get user by email
+  //  Get all jobs
   app.get(
-    '/users',
+    '/jobs',
     asyncHandler(async (req, res) => {
-      const email = req.query.email;
-      if (!email) return res.status(400).send({ message: 'Email is required' });
+      const sortOrder = req.query.sort === 'desc' ? -1 : 1;
+      const query = req.query.email ? { userEmail: req.query.email } : {};
+      const allJobs = await jobs
+        .find(query)
+        .sort({ created_at: sortOrder })
+        .toArray();
+      res.send(allJobs.filter(job => job.title && job.category));
+    })
+  );
 
-      const user = await users.findOne({ email });
-      res.send(user || { message: 'User not found' });
+  // Get a single job by ID
+  app.get(
+    '/jobs/:id',
+    asyncHandler(async (req, res) => {
+      const job = await jobs.findOne({ _id: new ObjectId(req.params.id) });
+      if (!job) return res.status(404).send({ message: 'Job not found' });
+      res.send(job);
+    })
+  );
+
+  // Update job ID
+  app.patch(
+    '/jobs/:id',
+    asyncHandler(async (req, res) => {
+      const { _id, ...rest } = req.body;
+      const update = { $set: { ...rest, updated_at: new Date() } };
+      const result = await jobs.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        update
+      );
+      res.send(result);
+    })
+  );
+
+  //  Delete job ID
+  app.delete(
+    '/jobs/:id',
+    asyncHandler(async (req, res) => {
+      const result = await jobs.deleteOne({ _id: new ObjectId(req.params.id) });
+      res.send(result);
     })
   );
 
@@ -68,5 +94,4 @@ async function run() {
 
 run().catch(console.error);
 
-// Start server
 app.listen(port, () => console.log(`🚀 Server running on port: ${port}`));
