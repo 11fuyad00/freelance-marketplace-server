@@ -1,99 +1,72 @@
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { MongoClient, ServerApiVersion } = require('mongodb');
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-// middleware
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// mongodb connect
+// MongoDB setup
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ylnpvzy.mongodb.net/?appName=Cluster0`;
-
-// Create a MongoClient
 const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
+  serverApi: { version: ServerApiVersion.v1 },
 });
+
+// Async error handler
+const asyncHandler = fn => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
 
 // Root route
 app.get('/', (req, res) => {
-  res.send('freelance marketplace server is running');
+  res.send('🚀 Freelance Marketplace Server (Users Only) ✅');
 });
 
 async function run() {
-  try {
-    await client.connect();
-    console.log('✅ MongoDB Connected Successfully');
+  await client.connect();
+  console.log('✅ MongoDB Connected');
 
-    const db = client.db('freelance_marketplace');
-    const jobsCollection = db.collection('jobs');
+  const db = client.db('freelance_marketplace');
+  const users = db.collection('users');
 
-    // ✅ GET all jobs
-    app.get('/jobs', async (req, res) => {
-      const cursor = jobsCollection.find();
-      const result = await cursor.toArray();
+  /** ===========================
+   *  USERS FUNCTIONALITY
+   * =========================== */
+
+  // 👉 Create new user
+  app.post(
+    '/users',
+    asyncHandler(async (req, res) => {
+      const newUser = req.body;
+      const existing = await users.findOne({ email: newUser.email });
+      if (existing)
+        return res.status(400).send({ message: 'User already exists' });
+
+      const result = await users.insertOne(newUser);
       res.send(result);
-    });
+    })
+  );
 
-    // ✅ GET job by ID
-    app.get('/jobs/:id', async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await jobsCollection.findOne(query);
-      res.send(result);
-    });
+  // 👉 Get user by email
+  app.get(
+    '/users',
+    asyncHandler(async (req, res) => {
+      const email = req.query.email;
+      if (!email) return res.status(400).send({ message: 'Email is required' });
 
-    // ✅ POST new job
-    app.post('/jobs', async (req, res) => {
-      const newJob = req.body;
-      const result = await jobsCollection.insertOne(newJob);
-      res.send(result);
-    });
+      const user = await users.findOne({ email });
+      res.send(user || { message: 'User not found' });
+    })
+  );
 
-    // ✅ PATCH update job
-    app.patch('/jobs/:id', async (req, res) => {
-      const id = req.params.id;
-      const updatedJobs = req.body;
-      const query = { _id: new ObjectId(id) };
-      const update = {
-        $set: {
-          title: updatedJobs.title,
-          description: updatedJobs.description,
-          category: updatedJobs.category,
-          price_min: updatedJobs.price_min,
-          price_max: updatedJobs.price_max,
-          status: updatedJobs.status,
-          updated_at: new Date(),
-        },
-      };
-      const result = await jobsCollection.updateOne(query, update);
-      res.send(result);
-    });
-
-    // ✅ DELETE job
-    app.delete('/jobs/:id', async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await jobsCollection.deleteOne(query);
-      res.send(result);
-    });
-
-    await client.db('admin').command({ ping: 1 });
-    console.log('✅ Pinged your deployment. Connection OK.');
-  } catch (err) {
-    console.error('❌ MongoDB connection error:', err);
-  }
+  await client.db('admin').command({ ping: 1 });
+  console.log('✅ MongoDB Ping OK');
 }
-run().catch(console.dir);
 
-// ✅ Keep the client open
-app.listen(port, () => {
-  console.log(` Freelance Marketplace server running on port: ${port}`);
-});
+run().catch(console.error);
+
+// Start server
+app.listen(port, () => console.log(`🚀 Server running on port: ${port}`));
